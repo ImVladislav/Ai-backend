@@ -6,13 +6,13 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const bot1Prompt = JSON.parse(fs.readFileSync('prompts/Eva.json', 'utf8'));
+const bot1Prompt = JSON.parse(fs.readFileSync('prompts/Kiota.json', 'utf8'));
 
 const app = express();
 const PORT = 4000;
 const TOKEN = process.env.TOKEN;
 
-const allowedOrigins = ['https://cto-one.vercel.app', 'https://moldy.lol'];
+const allowedOrigins = ['https://kawai-2wtf.vercel.app', 'https://kawai.land'];
 
 app.use(cors({
   origin: (origin, callback) => {
