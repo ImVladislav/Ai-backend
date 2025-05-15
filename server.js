@@ -14,177 +14,91 @@ const TOKEN = process.env.TOKEN;
 
 const allowedOrigins = ['https://cto-one.vercel.app', 'https://moldy.lol'];
 
-app.use(
-   cors({
-      origin: (origin, callback) => {
-         if (
-            !origin ||
-            origin.startsWith('http://localhost') ||
-            origin.startsWith('http://127.0.0.1') ||
-            allowedOrigins.includes(origin)
-         ) {
-            callback(null, true);
-         } else {
-            callback(new Error('Not allowed by CORS')); // Запрещено
-         }
-      }
-   })
-);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || origin.startsWith('http://localhost') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
 app.use(bodyParser.json());
 
-// Настройка ограничения частоты запросов
-const limiter = rateLimit({
-   windowMs: 1 * 60 * 1000,
-   max: 60,
-   message: 'Too many requests from this IP, please try again later.'
-});
-
-app.use('/chat', limiter);
+app.use('/chat', rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many requests from this IP, try again later.',
+}));
 
 app.post('/chat', async (req, res) => {
-   try {
-      const { messages } = req.body;
-      console.log('message', messages);
+  try {
+    const { messages } = req.body;
 
-      const {
-         description,
-         personality,
-         instructions, // Этот объект уже является массивом, не имеет вложенных объектов
-         example_messages
-      } = bot1Prompt;
+    const cleanedMessages = messages.map((msg) => {
+      const text = typeof msg === 'string' ? msg : msg.message;
+      return text.replace(/<.*?>/g, '').replace(/^You:\s*/i, '').trim();
+    });
 
-      // Очищаем HTML-теги из всех сообщений
-const cleanedMessages = messages.map((msg) => {
-   const text = typeof msg === 'string' ? msg : msg.message;
-   const cleanedMsg = text.replace(/<.*?>/g, '').trim();
-   return cleanedMsg.replace(/^You:\s*/i, '').trim();
-});
+    const chatHistory = cleanedMessages.map((text, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: text,
+    })).slice(-10);
 
-      console.log('bot1Prompt', bot1Prompt);
+    const promptMessages = [
+      {
+        role: 'system',
+        content: `
+Character Overview:
+- Name: ${bot1Prompt.name || 'No name'}
+- Description: ${bot1Prompt.description?.details?.join(' ') || 'No description'}
 
-      // Конвертируем сообщения в формат OpenAI API
-      const chatHistory = [];
-      for (let i = 0; i < cleanedMessages.length; i++) {
-         if (i % 2 === 0) {
-            chatHistory.push({ role: 'user', content: cleanedMessages[i] });
-         } else {
-            chatHistory.push({
-               role: 'assistant',
-               content: cleanedMessages[i]
-            });
-         }
+Personality:
+- Traits: ${bot1Prompt.personality?.traits?.join(', ') || 'None'}
+- Values: ${bot1Prompt.personality?.values?.join(', ') || 'None'}
+- Culture: ${bot1Prompt.personality?.culture?.join(', ') || 'None'}
+- Unexpected Scenarios: ${bot1Prompt.personality?.unexpected_scenarios || 'None'}
+
+Instructions:
+- Do:
+${bot1Prompt.instruction?.do_donts?.do?.map((d) => `- ${d}`).join('\n') || 'None'}
+- Don’t: ${bot1Prompt.instruction?.do_donts?.dont || 'None'}
+- Message Length: ${bot1Prompt.instruction?.message_length || 'Any'}
+- Emoji Use: ${bot1Prompt.instruction?.emoji_use || 'Any'}
+- Catchphrases: ${bot1Prompt.instruction?.catchphrases?.join(', ') || 'None'}
+- Criticism Response:
+${bot1Prompt.instruction?.criticism_response?.join('\n') || 'None'}
+
+Example Messages:
+${bot1Prompt.example_dialogues?.map(e => `User: ${e.user}\nBot: ${e.response}`).join('\n') || 'No examples'}
+        `.trim(),
+      },
+      ...chatHistory,
+    ];
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-3.5-turbo',
+        messages: promptMessages,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          'Content-Type': 'application/json',
+        },
       }
+    );
 
-      // Ограничиваем историю (например, до 10 последних сообщений)
-      const trimmedHistory = chatHistory.slice(-10);
-
-
-     const handleSendMessage = async (e) => {
-   e.preventDefault();
-   if (!message) return;
-
-   const newUserMessage = { message, isUser: true };
-   const botTypingMessage = { message: 'Kiota is typing...', isUser: false };
-
-   // Локальна змінна для історії чату
-   const currentHistory = [...chatHistory, newUserMessage];
-
-   // Оновлення історії в UI
-   setChatHistory([...currentHistory, botTypingMessage]);
-   saveChatHistory([...currentHistory, botTypingMessage]);
-
-   setMessage('');
-
-   try {
-      const backendUrl = 'https://ai-backend-z123.onrender.com/chat';
-
-      // Витягуємо лише тексти (щоб були рядки, не об’єкти)
-      const historyForBackend = currentHistory.map((entry) => entry.message).slice(-10);
-
-      const response = await fetch(backendUrl, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ messages: historyForBackend })
-      });
-
-      if (!response.ok)
-         throw new Error(`${response.status} ${response.statusText}`);
-      
-      const data = await response.json();
-      const botMessage = { message: data.reply, isUser: false };
-
-      const updatedHistory = [...currentHistory, botMessage];
-
-      setChatHistory(updatedHistory);
-      saveChatHistory(updatedHistory);
-   } catch (error) {
-      const errorMessage = {
-         message: `Error: ${error.message || 'Error sending request'}`,
-         isUser: false
-      };
-
-      const fallbackHistory = [...currentHistory, errorMessage];
-
-      setChatHistory(fallbackHistory);
-      saveChatHistory(fallbackHistory);
-   }
-};
-       
-      const promptMessages = [
-         {
-            role: 'system',
-            content: `
-              Character Overview:
-              - Name: ${bot1Prompt.name || 'No name available'}
-              - Description: ${bot1Prompt.description || 'No description available'}
-              
-              Personality:
-              - ${bot1Prompt.details.personality && bot1Prompt.details.personality.length > 0
-                  ? bot1Prompt.details.personality.join(', ')
-                  : 'No personality traits available'}
-              
-              Instructions:
-              ${bot1Prompt.details.instructions && bot1Prompt.details.instructions.do_and_donts.length > 0 
-                  ? bot1Prompt.details.instructions.do_and_donts.map(instruction => `- ${instruction}`).join('\n')
-                  : 'No instructions available'}
-              
-              Example Messages:
-              ${bot1Prompt.details.instructions && bot1Prompt.details.instructions.response_guidelines.length > 0 
-                  ? bot1Prompt.details.instructions.response_guidelines.map(msg => `- ${msg}`).join('\n')
-                  : 'No example messages available'}
-            `
-         },
-         ...trimmedHistory // Добавляем очищенную историю
-      ];
-
-      console.log('promptMessages', promptMessages);
-
-      try {
-         const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-               model: 'gpt-3.5-turbo',
-               messages: promptMessages
-            },
-            {
-               headers: {
-                  Authorization: `Bearer ${TOKEN}`,
-                  'Content-Type': 'application/json'
-               }
-            }
-         );
-
-         const botReply = response.data.choices[0].message.content.trim();
-         res.json({ reply: botReply });
-      } catch (error) {
-         console.error('Error fetching from OpenAI:', error);
-         res.status(500).json({ error: 'Ошибка при отправке запроса' });
-      }
-   } catch (error) {
-      console.log('Error', error);
-   }
+    const botReply = response.data.choices[0].message.content.trim();
+    res.json({ reply: botReply });
+  } catch (err) {
+    console.error('❌ Chat error:', err?.response?.data || err.message);
+    res.status(500).json({ error: 'OpenAI request failed' });
+  }
 });
 
 app.listen(PORT, () => {
-   console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
