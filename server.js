@@ -6,120 +6,177 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+const bot1Prompt = JSON.parse(fs.readFileSync('prompts/Eva.json', 'utf8'));
+
 const app = express();
 const PORT = 4000;
 const TOKEN = process.env.TOKEN;
 
-// 🔐 Дозволені домени
-const allowedOrigins = ['https://boobsi.vercel.app', 'https://boobsi.world'];
+const allowedOrigins = ['https://cto-one.vercel.app', 'https://moldy.lol'];
 
-// ✅ CORS
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-}));
-
+app.use(
+   cors({
+      origin: (origin, callback) => {
+         if (
+            !origin ||
+            origin.startsWith('http://localhost') ||
+            origin.startsWith('http://127.0.0.1') ||
+            allowedOrigins.includes(origin)
+         ) {
+            callback(null, true);
+         } else {
+            callback(new Error('Not allowed by CORS')); // Запрещено
+         }
+      }
+   })
+);
 app.use(bodyParser.json());
 
-// ⚠️ Rate limiter
+// Настройка ограничения частоты запросов
 const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  message: 'Too many requests from this IP, try again later.',
+   windowMs: 1 * 60 * 1000,
+   max: 60,
+   message: 'Too many requests from this IP, please try again later.'
 });
 
-// 📦 Завантаження промптів
-const loadPrompt = (filename) => JSON.parse(fs.readFileSync(`prompts/${filename}`, 'utf8'));
-const botPrompts = {
-  bot1: loadPrompt('Sunny.json'),
-  bot2: loadPrompt('Mini.json'),
-  bot3: loadPrompt('Nova.json'),
-  bot4: loadPrompt('Eva.json'),
-};
+app.use('/chat', limiter);
 
-// 🧠 Генерація повідомлень для OpenAI
-const getPromptMessages = (botPrompt, messages) => {
-  const cleaned = messages.map(msg => msg.replace(/<[^>]*>/g, '').replace(/^you:\s*/i, '').trim());
-  const chatHistory = cleaned.map((text, i) => ({
-    role: i % 2 === 0 ? 'user' : 'assistant',
-    content: text,
-  }));
+app.post('/chat', async (req, res) => {
+   try {
+      const { messages } = req.body;
+      console.log('message', messages);
 
-  const systemContent = `
-Character Overview:
-- Name: ${botPrompt.name || 'Unknown'}
-- Description: ${(botPrompt.description?.details || []).join(' ')}
+      const {
+         description,
+         personality,
+         instructions, // Этот объект уже является массивом, не имеет вложенных объектов
+         example_messages
+      } = bot1Prompt;
 
-Personality:
-- Traits: ${(botPrompt.personality?.traits || []).join(', ')}
-- Values: ${(botPrompt.personality?.values || []).join(', ')}
-- Culture: ${(botPrompt.personality?.culture || []).join(', ')}
-- Unexpected Scenarios: ${botPrompt.personality?.unexpected_scenarios || 'None'}
+      // Очищаем HTML-теги из всех сообщений
+      const cleanedMessages = messages.map((msg) => {
+         const cleanedMsg = msg.replace(/<.*?>/g, '').trim(); // Removes HTML tags
+         return cleanedMsg.replace(/^You:\s*/, '').trim(); // Removes "You:" if present
+      });
 
-Add-Ons:
-- Quirks: ${(botPrompt.add_ons?.quirks || []).join(', ')}
-- Humor: ${(botPrompt.add_ons?.humor || []).join(', ')}
+      console.log('bot1Prompt', bot1Prompt);
 
-Instructions:
-- Do: ${(botPrompt.instruction?.do_donts?.do || []).join('\n- ')}
-- Avoid: ${botPrompt.instruction?.do_donts?.dont || 'None'}
-- Message Length: ${botPrompt.instruction?.message_length || 'Any'}
-- Emoji Use: ${botPrompt.instruction?.emoji_use || 'Any'}
-- Catchphrases: ${(botPrompt.instruction?.catchphrases || []).join(', ')}
-- Criticism Response: ${(botPrompt.instruction?.criticism_response || []).join('\n')}
+      // Конвертируем сообщения в формат OpenAI API
+      const chatHistory = [];
+      for (let i = 0; i < cleanedMessages.length; i++) {
+         if (i % 2 === 0) {
+            chatHistory.push({ role: 'user', content: cleanedMessages[i] });
+         } else {
+            chatHistory.push({
+               role: 'assistant',
+               content: cleanedMessages[i]
+            });
+         }
+      }
 
-Examples:
-${(botPrompt.example_dialogues || []).map(ex => `User: ${ex.user}\nResponse: ${ex.response}`).join('\n')}
-`.trim();
+      // Ограничиваем историю (например, до 10 последних сообщений)
+      const trimmedHistory = chatHistory.slice(-10);
 
-  return [
-    { role: 'system', content: systemContent },
-    ...chatHistory.slice(-10)
-  ];
-};
 
-// 📡 Обробка чату
-const handleChat = async (req, res, botPrompt) => {
-  try {
-    const { messages } = req.body;
-    if (!Array.isArray(messages)) throw new Error("Invalid 'messages' array");
+      const getPromptMessages = (botPrompt, messages) => {
+         const cleanedMessages = messages.map((msg) => {
+           const cleanedMsg = msg.replace(/<.*?>/g, '').trim();
+           return cleanedMsg.replace(/^You:\s*/, '').trim();
+         });
+       
+         const chatHistory = [];
+         for (let i = 0; i < cleanedMessages.length; i++) {
+           if (i % 2 === 0) {
+             chatHistory.push({ role: 'user', content: cleanedMessages[i] });
+           } else {
+             chatHistory.push({ role: 'assistant', content: cleanedMessages[i] });
+           }
+         }
+       
+         const trimmedHistory = chatHistory.slice(-10);
+       
+         const promptMessages = [
+           {
+             role: 'system',
+             content: `
+               Character Overview:
+               - Name: ${botPrompt.name}
+               - Description: ${botPrompt.description.details.join(' ')}
+               
+               Personality:
+               - ${botPrompt.personality.traits.join(', ')}
+               - Values: ${botPrompt.personality.values.join(', ')}
+               - Culture: ${botPrompt.personality.culture.join(', ')}
+               
+               Instructions:
+               - ${botPrompt.instruction.do_donts.do.map((instruction) => `- ${instruction}`).join('\n')}
+               - Don't: ${botPrompt.instruction.do_donts.dont}
+               
+               Example Messages:
+               ${botPrompt.example_dialogues.map((msg) => `User: ${msg.user}\nBot: ${msg.response}`).join('\n')}
+             `,
+           },
+           ...trimmedHistory,
+         ];
+       
+         return promptMessages;
+       };
+       
+      const promptMessages = [
+         {
+            role: 'system',
+            content: `
+              Character Overview:
+              - Name: ${bot1Prompt.name || 'No name available'}
+              - Description: ${bot1Prompt.description || 'No description available'}
+              
+              Personality:
+              - ${bot1Prompt.details.personality && bot1Prompt.details.personality.length > 0
+                  ? bot1Prompt.details.personality.join(', ')
+                  : 'No personality traits available'}
+              
+              Instructions:
+              ${bot1Prompt.details.instructions && bot1Prompt.details.instructions.do_and_donts.length > 0 
+                  ? bot1Prompt.details.instructions.do_and_donts.map(instruction => `- ${instruction}`).join('\n')
+                  : 'No instructions available'}
+              
+              Example Messages:
+              ${bot1Prompt.details.instructions && bot1Prompt.details.instructions.response_guidelines.length > 0 
+                  ? bot1Prompt.details.instructions.response_guidelines.map(msg => `- ${msg}`).join('\n')
+                  : 'No example messages available'}
+            `
+         },
+         ...trimmedHistory // Добавляем очищенную историю
+      ];
 
-    const payload = {
-      model: 'gpt-3.5-turbo',
-      messages: getPromptMessages(botPrompt, messages),
-    };
+      console.log('promptMessages', promptMessages);
 
-    const response = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    });
+      try {
+         const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+               model: 'gpt-3.5-turbo',
+               messages: promptMessages
+            },
+            {
+               headers: {
+                  Authorization: `Bearer ${TOKEN}`,
+                  'Content-Type': 'application/json'
+               }
+            }
+         );
 
-    const reply = response.data.choices[0].message.content.trim();
-    res.json({ reply });
-  } catch (err) {
-    console.error('Chat error:', err?.response?.data || err.message);
-    res.status(500).json({
-      error: 'OpenAI request failed',
-      details: err?.response?.data || err.message
-    });
-  }
-};
+         const botReply = response.data.choices[0].message.content.trim();
+         res.json({ reply: botReply });
+      } catch (error) {
+         console.error('Error fetching from OpenAI:', error);
+         res.status(500).json({ error: 'Ошибка при отправке запроса' });
+      }
+   } catch (error) {
+      console.log('Error', error);
+   }
+});
 
-// 🧩 Маршрути для кожного бота
-app.post('/chat/bot1', limiter, (req, res) => handleChat(req, res, botPrompts.bot1));
-app.post('/chat/bot2', limiter, (req, res) => handleChat(req, res, botPrompts.bot2));
-app.post('/chat/bot3', limiter, (req, res) => handleChat(req, res, botPrompts.bot3));
-app.post('/chat/bot4', limiter, (req, res) => handleChat(req, res, botPrompts.bot4));
-
-// 🔁 За замовчуванням — bot1
-app.post('/chat', limiter, (req, res) => handleChat(req, res, botPrompts.bot1));
-
-// 🚀 Запуск
-app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
+app.listen(PORT, () => {
+   console.log(`Server is running on http://localhost:${PORT}`);
+});
