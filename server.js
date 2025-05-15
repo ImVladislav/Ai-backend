@@ -79,52 +79,55 @@ const cleanedMessages = messages.map((msg) => {
       const trimmedHistory = chatHistory.slice(-10);
 
 
-     const getPromptMessages = (botPrompt, messages) => {
-  const cleanedMessages = messages.map((msg) => {
-    const text = typeof msg === 'string' ? msg : msg.message;
-    const cleaned = text.replace(/<.*?>/g, '').replace(/^you:\s*/i, '').trim();
-    return cleaned;
-  });
+     const handleSendMessage = async (e) => {
+   e.preventDefault();
+   if (!message) return;
 
-  const chatHistory = cleanedMessages.map((text, index) => ({
-    role: messages[index]?.isUser ? 'user' : 'assistant',
-    content: text,
-  }));
+   const newUserMessage = { message, isUser: true };
+   const botTypingMessage = { message: 'Kiota is typing...', isUser: false };
 
-  const promptMessages = [
-    {
-      role: 'system',
-      content: `
-Character Overview:
-- Name: ${botPrompt.name}
-- Description: ${botPrompt.description.details.join(' ')}
+   // Локальна змінна для історії чату
+   const currentHistory = [...chatHistory, newUserMessage];
 
-Personality:
-- Traits: ${botPrompt.personality.traits.join(', ')}
-- Values: ${botPrompt.personality.values.join(', ')}
-- Culture: ${botPrompt.personality.culture.join(', ')}
-- Unexpected Scenarios: ${botPrompt.personality.unexpected_scenarios}
+   // Оновлення історії в UI
+   setChatHistory([...currentHistory, botTypingMessage]);
+   saveChatHistory([...currentHistory, botTypingMessage]);
 
-Add-Ons:
-- Quirks: ${botPrompt.add_ons.quirks.join(', ')}
-- Humor: ${botPrompt.add_ons.humor.join(', ')}
+   setMessage('');
 
-Instructions:
-- Do: ${botPrompt.instruction.do_donts.do.join('\n- ')}
-- Avoid: ${botPrompt.instruction.do_donts.dont}
-- Message Length: ${botPrompt.instruction.message_length}
-- Emoji Use: ${botPrompt.instruction.emoji_use}
-- Catchphrases: ${botPrompt.instruction.catchphrases.join(', ')}
-- Criticism Response: ${botPrompt.instruction.criticism_response.join('\n')}
+   try {
+      const backendUrl = 'https://ai-backend-z123.onrender.com/chat';
 
-Example Messages:
-${botPrompt.example_dialogues.map((m) => `User: ${m.user}\nResponse: ${m.response}`).join('\n')}
-    `.trim(),
-    },
-    ...chatHistory.slice(-10),
-  ];
+      // Витягуємо лише тексти (щоб були рядки, не об’єкти)
+      const historyForBackend = currentHistory.map((entry) => entry.message).slice(-10);
 
-  return promptMessages;
+      const response = await fetch(backendUrl, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ messages: historyForBackend })
+      });
+
+      if (!response.ok)
+         throw new Error(`${response.status} ${response.statusText}`);
+      
+      const data = await response.json();
+      const botMessage = { message: data.reply, isUser: false };
+
+      const updatedHistory = [...currentHistory, botMessage];
+
+      setChatHistory(updatedHistory);
+      saveChatHistory(updatedHistory);
+   } catch (error) {
+      const errorMessage = {
+         message: `Error: ${error.message || 'Error sending request'}`,
+         isUser: false
+      };
+
+      const fallbackHistory = [...currentHistory, errorMessage];
+
+      setChatHistory(fallbackHistory);
+      saveChatHistory(fallbackHistory);
+   }
 };
        
       const promptMessages = [
