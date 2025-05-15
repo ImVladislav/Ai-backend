@@ -54,10 +54,11 @@ app.post('/chat', async (req, res) => {
       } = bot1Prompt;
 
       // Очищаем HTML-теги из всех сообщений
-      const cleanedMessages = messages.map((msg) => {
-         const cleanedMsg = msg.replace(/<.*?>/g, '').trim(); // Removes HTML tags
-         return cleanedMsg.replace(/^You:\s*/, '').trim(); // Removes "You:" if present
-      });
+const cleanedMessages = messages.map((msg) => {
+   const text = typeof msg === 'string' ? msg : msg.message;
+   const cleanedMsg = text.replace(/<.*?>/g, '').trim();
+   return cleanedMsg.replace(/^You:\s*/i, '').trim();
+});
 
       console.log('bot1Prompt', bot1Prompt);
 
@@ -78,49 +79,53 @@ app.post('/chat', async (req, res) => {
       const trimmedHistory = chatHistory.slice(-10);
 
 
-      const getPromptMessages = (botPrompt, messages) => {
-         const cleanedMessages = messages.map((msg) => {
-           const cleanedMsg = msg.replace(/<.*?>/g, '').trim();
-           return cleanedMsg.replace(/^You:\s*/, '').trim();
-         });
-       
-         const chatHistory = [];
-         for (let i = 0; i < cleanedMessages.length; i++) {
-           if (i % 2 === 0) {
-             chatHistory.push({ role: 'user', content: cleanedMessages[i] });
-           } else {
-             chatHistory.push({ role: 'assistant', content: cleanedMessages[i] });
-           }
-         }
-       
-         const trimmedHistory = chatHistory.slice(-10);
-       
-         const promptMessages = [
-           {
-             role: 'system',
-             content: `
-               Character Overview:
-               - Name: ${botPrompt.name}
-               - Description: ${botPrompt.description.details.join(' ')}
-               
-               Personality:
-               - ${botPrompt.personality.traits.join(', ')}
-               - Values: ${botPrompt.personality.values.join(', ')}
-               - Culture: ${botPrompt.personality.culture.join(', ')}
-               
-               Instructions:
-               - ${botPrompt.instruction.do_donts.do.map((instruction) => `- ${instruction}`).join('\n')}
-               - Don't: ${botPrompt.instruction.do_donts.dont}
-               
-               Example Messages:
-               ${botPrompt.example_dialogues.map((msg) => `User: ${msg.user}\nBot: ${msg.response}`).join('\n')}
-             `,
-           },
-           ...trimmedHistory,
-         ];
-       
-         return promptMessages;
-       };
+     const getPromptMessages = (botPrompt, messages) => {
+  const cleanedMessages = messages.map((msg) => {
+    const text = typeof msg === 'string' ? msg : msg.message;
+    const cleaned = text.replace(/<.*?>/g, '').replace(/^you:\s*/i, '').trim();
+    return cleaned;
+  });
+
+  const chatHistory = cleanedMessages.map((text, index) => ({
+    role: messages[index]?.isUser ? 'user' : 'assistant',
+    content: text,
+  }));
+
+  const promptMessages = [
+    {
+      role: 'system',
+      content: `
+Character Overview:
+- Name: ${botPrompt.name}
+- Description: ${botPrompt.description.details.join(' ')}
+
+Personality:
+- Traits: ${botPrompt.personality.traits.join(', ')}
+- Values: ${botPrompt.personality.values.join(', ')}
+- Culture: ${botPrompt.personality.culture.join(', ')}
+- Unexpected Scenarios: ${botPrompt.personality.unexpected_scenarios}
+
+Add-Ons:
+- Quirks: ${botPrompt.add_ons.quirks.join(', ')}
+- Humor: ${botPrompt.add_ons.humor.join(', ')}
+
+Instructions:
+- Do: ${botPrompt.instruction.do_donts.do.join('\n- ')}
+- Avoid: ${botPrompt.instruction.do_donts.dont}
+- Message Length: ${botPrompt.instruction.message_length}
+- Emoji Use: ${botPrompt.instruction.emoji_use}
+- Catchphrases: ${botPrompt.instruction.catchphrases.join(', ')}
+- Criticism Response: ${botPrompt.instruction.criticism_response.join('\n')}
+
+Example Messages:
+${botPrompt.example_dialogues.map((m) => `User: ${m.user}\nResponse: ${m.response}`).join('\n')}
+    `.trim(),
+    },
+    ...chatHistory.slice(-10),
+  ];
+
+  return promptMessages;
+};
        
       const promptMessages = [
          {
