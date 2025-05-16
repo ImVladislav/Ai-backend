@@ -9,6 +9,7 @@ require('dotenv').config();
 const bot1Prompt = JSON.parse(fs.readFileSync('prompts/Kiota.json', 'utf8'));
 
 const app = express();
+app.set('trust proxy', 1); // <== це обов’язково для роботи на Render/Vercel
 const PORT = 4000;
 const TOKEN = process.env.TOKEN;
 
