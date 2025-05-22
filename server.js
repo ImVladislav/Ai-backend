@@ -6,7 +6,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const bot1Prompt = JSON.parse(fs.readFileSync('prompts/Kiota.json', 'utf8'));
+const bot1Prompt = JSON.parse(fs.readFileSync('prompts/infinitym.json', 'utf8'));
 
 const app = express();
 app.set('trust proxy', 1); // <== це обов’язково для роботи на Render/Vercel
