@@ -13,7 +13,7 @@ app.set('trust proxy', 1); // <== це обов’язково для робот
 const PORT = 4000;
 const TOKEN = process.env.TOKEN;
 
-const allowedOrigins = ['https://infinitym.vercel.app', 'https://kawai.land'];
+const allowedOrigins = ['https://infinitym.vercel.app', 'https://infinityhopeai.com'];
 
 app.use(cors({
   origin: (origin, callback) => {
