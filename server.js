@@ -12,8 +12,8 @@ const app = express();
 app.set('trust proxy', 1); // <== це обов’язково для роботи на Render/Vercel
 const PORT = 4000;
 const TOKEN = process.env.TOKEN;
-
-const allowedOrigins = ['https://infinitym.vercel.app', 'https://infinityhopeai.com'];
+ 
+const allowedOrigins = ['https://infinitym.vercel.app', 'https://8hopeai.com', 'https://infinityhopeai.com'];
 
 app.use(cors({
   origin: (origin, callback) => {
